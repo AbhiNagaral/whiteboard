@@ -32,11 +32,15 @@ class _DigitalInkFullScreenState extends State<DigitalInkFullScreen> {
   bool _isPreviewExpanded = false;
 
   final double _canvasHeight = 3000.0;
+  final double _canvasWidth = 2000.0;
   final double _gridSpacing = 120.0;
-  final ScrollController _scrollController = ScrollController();
+
+  final ScrollController _verticalScrollController = ScrollController();
+  final ScrollController _horizontalScrollController = ScrollController();
 
   Map<int, String> _linePreviews = {};
   Timer? _debounceTimer;
+  Timer? _scrollDebounce; // Dedicated timer for auto-scroll
 
   @override
   void initState() {
@@ -61,9 +65,44 @@ class _DigitalInkFullScreenState extends State<DigitalInkFullScreen> {
       DeviceOrientation.landscapeRight,
     ]);
     _debounceTimer?.cancel();
-    _scrollController.dispose();
+    _scrollDebounce?.cancel();
+    _verticalScrollController.dispose();
+    _horizontalScrollController.dispose();
     _recognizer.close();
     super.dispose();
+  }
+
+  void _scrollToFollowPoints(Offset position) {
+    if (!mounted) return;
+
+    // Reset the debounce timer every time the user moves the pen
+    _scrollDebounce?.cancel();
+    _scrollDebounce = Timer(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
+
+      final size = MediaQuery.of(context).size;
+      const double edgeMargin = 100.0;
+
+      // Vertical Auto-Scroll Logic
+      double vOffset = _verticalScrollController.offset;
+      if (position.dy > (vOffset + size.height - edgeMargin)) {
+        _verticalScrollController.animateTo(
+          (position.dy - (size.height / 2)).clamp(0, _canvasHeight - size.height),
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOut,
+        );
+      }
+
+      // Horizontal Auto-Scroll Logic
+      double hOffset = _horizontalScrollController.offset;
+      if (position.dx > (hOffset + size.width - edgeMargin)) {
+        _horizontalScrollController.animateTo(
+          (position.dx - (size.width / 2)).clamp(0, _canvasWidth - size.width),
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOut,
+        );
+      }
+    });
   }
 
   void _toggleRotation() {
@@ -227,44 +266,49 @@ class _DigitalInkFullScreenState extends State<DigitalInkFullScreen> {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: SingleChildScrollView(
-                  controller: _scrollController,
-                  physics: _isReadOnlyMode
-                      ? const AlwaysScrollableScrollPhysics()
-                      : const NeverScrollableScrollPhysics(),
-                  child: GestureDetector(
-                    onPanStart: _isReadOnlyMode ? null : (d) {
-                      if (!_isEraserMode) {
-                        _ink.strokes.add(Stroke());
-                        _currentStrokePoints = [];
-                      } else {
-                        _erasePointsAt(d.localPosition);
-                      }
-                    },
-                    onPanUpdate: _isReadOnlyMode ? null : (d) {
-                      if (_isEraserMode) {
-                        _erasePointsAt(d.localPosition);
-                      } else {
-                        setState(() {
-                          _currentStrokePoints.add(StrokePoint(
-                            x: d.localPosition.dx,
-                            y: d.localPosition.dy,
-                            t: DateTime.now().millisecondsSinceEpoch,
-                          ));
-                          _ink.strokes.last.points = List.from(_currentStrokePoints);
-                        });
-                      }
-                    },
-                    onPanEnd: _isReadOnlyMode ? null : (_) => _onUserStoppedScribbling(),
-                    child: Container(
-                      color: Colors.white,
-                      width: double.infinity,
-                      height: _canvasHeight,
-                      child: CustomPaint(
-                        painter: SignaturePainter(
-                            ink: _ink,
-                            gridSpacing: _gridSpacing
+                  controller: _verticalScrollController,
+                  physics: _isReadOnlyMode ? const AlwaysScrollableScrollPhysics() : const NeverScrollableScrollPhysics(),
+                  child: SingleChildScrollView(
+                    controller: _horizontalScrollController,
+                    scrollDirection: Axis.horizontal,
+                    physics: _isReadOnlyMode ? const AlwaysScrollableScrollPhysics() : const NeverScrollableScrollPhysics(),
+                    child: GestureDetector(
+                      onPanStart: _isReadOnlyMode ? null : (d) {
+                        if (!_isEraserMode) {
+                          _ink.strokes.add(Stroke());
+                          _currentStrokePoints = [];
+                        } else {
+                          _erasePointsAt(d.localPosition);
+                        }
+                      },
+                      onPanUpdate: _isReadOnlyMode ? null : (d) {
+                        if (_isEraserMode) {
+                          _erasePointsAt(d.localPosition);
+                        } else {
+                          setState(() {
+                            final point = StrokePoint(
+                              x: d.localPosition.dx,
+                              y: d.localPosition.dy,
+                              t: DateTime.now().millisecondsSinceEpoch,
+                            );
+                            _currentStrokePoints.add(point);
+                            _ink.strokes.last.points = List.from(_currentStrokePoints);
+                            _scrollToFollowPoints(d.localPosition);
+                          });
+                        }
+                      },
+                      onPanEnd: _isReadOnlyMode ? null : (_) => _onUserStoppedScribbling(),
+                      child: Container(
+                        color: Colors.white,
+                        width: _canvasWidth,
+                        height: _canvasHeight,
+                        child: CustomPaint(
+                          painter: SignaturePainter(
+                              ink: _ink,
+                              gridSpacing: _gridSpacing
+                          ),
+                          size: Size(_canvasWidth, _canvasHeight),
                         ),
-                        size: Size(double.infinity, _canvasHeight),
                       ),
                     ),
                   ),
@@ -289,37 +333,20 @@ class _DigitalInkFullScreenState extends State<DigitalInkFullScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          "Preview",
-                          style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue.shade900
-                          ),
-                        ),
-                        Icon(
-                          _isPreviewExpanded ? Icons.expand_more : Icons.expand_less,
-                          size: 18,
-                          color: Colors.blue.shade900,
-                        ),
+                        Text("Preview", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue.shade900)),
+                        Icon(_isPreviewExpanded ? Icons.expand_more : Icons.expand_less, size: 18, color: Colors.blue.shade900),
                       ],
                     ),
                     if (_isPreviewExpanded) ...[
                       const Divider(height: 12),
                       ConstrainedBox(
-                        // FIXED: Max height set to 120 as requested
                         constraints: const BoxConstraints(maxHeight: 120),
                         child: ListView(
                           shrinkWrap: true,
                           children: sortedPreviewKeys.map((key) => Padding(
                             padding: const EdgeInsets.symmetric(vertical: 2),
-                            child: Text(
-                              "Row ${key + 1}: ${_linePreviews[key]}",
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                  color: Colors.blueGrey
-                              ),
+                            child: Text("Row ${key + 1}: ${_linePreviews[key]}",
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey),
                             ),
                           )).toList(),
                         ),
@@ -333,18 +360,13 @@ class _DigitalInkFullScreenState extends State<DigitalInkFullScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
             child: Center(
-              // FIXED: Done button with 100 width
               child: SizedBox(
                 width: 100,
                 height: 45,
                 child: FilledButton(
                   onPressed: _isProcessing ? null : () => _performRecognition(),
                   child: _isProcessing
-                      ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  )
+                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                       : const Text("Done", style: TextStyle(fontSize: 14)),
                 ),
               ),
