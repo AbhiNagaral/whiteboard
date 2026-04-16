@@ -47,6 +47,9 @@ class _DigitalInkFullScreenState extends State<DigitalInkFullScreen> {
     super.initState();
     _recognizer = DigitalInkRecognizer(languageCode: widget.languageCode);
     _checkModelStatus();
+    _horizontalScrollController.addListener(() {
+      setState(() {}); // Trigger repaint to update floating text position
+    });
   }
 
   Future<void> _checkModelStatus() async {
@@ -304,8 +307,12 @@ class _DigitalInkFullScreenState extends State<DigitalInkFullScreen> {
                         height: _canvasHeight,
                         child: CustomPaint(
                           painter: SignaturePainter(
-                              ink: _ink,
-                              gridSpacing: _gridSpacing
+                            ink: _ink,
+                            gridSpacing: _gridSpacing,
+                            linePreviews: _linePreviews,
+                            horizontalOffset: _horizontalScrollController.hasClients
+                                ? _horizontalScrollController.offset
+                                : 0.0,
                           ),
                           size: Size(_canvasWidth, _canvasHeight),
                         ),

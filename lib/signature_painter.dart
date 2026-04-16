@@ -3,22 +3,33 @@ import 'package:google_mlkit_digital_ink_recognition/google_mlkit_digital_ink_re
 
 class SignaturePainter extends CustomPainter {
   final Ink ink;
-  final double gridSpacing; // Distance between horizontal lines
+  final double gridSpacing;
+  final Map<int, String> linePreviews;
+  final double horizontalOffset;
 
-  SignaturePainter({required this.ink, this.gridSpacing = 80.0});
+  SignaturePainter({
+    required this.ink,
+    this.gridSpacing = 80.0,
+    this.linePreviews = const {},
+    this.horizontalOffset = 0.0, // Default to 0
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
-    // 1. Draw Grid Lines
     final Paint gridPaint = Paint()
       ..color = Colors.blue.withOpacity(0.2)
       ..strokeWidth = 1.0;
 
     for (double y = gridSpacing; y < size.height; y += gridSpacing) {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+
+      int lineIndex = (y / gridSpacing).floor() - 1;
+
+      if (linePreviews.containsKey(lineIndex)) {
+        _drawTextPreview(canvas, linePreviews[lineIndex]!, y - gridSpacing);
+      }
     }
 
-    // 2. Draw Ink Strokes
     final Paint strokePaint = Paint()
       ..color = Colors.black87
       ..strokeCap = StrokeCap.round
@@ -33,6 +44,23 @@ class SignaturePainter extends CustomPainter {
         canvas.drawLine(Offset(p1.x, p1.y), Offset(p2.x, p2.y), strokePaint);
       }
     }
+  }
+
+  void _drawTextPreview(Canvas canvas, String text, double yOffset) {
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: Colors.blue.withOpacity(0.5),
+          fontSize: 18,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+
+    textPainter.layout();
+    textPainter.paint(canvas, Offset(horizontalOffset + 20, yOffset));
   }
 
   @override
